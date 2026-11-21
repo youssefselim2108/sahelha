@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const { Booking, StatusEvent, Technician, Request } = require('../../models');
 const { HttpError } = require('../../errors');
 const { recomputeReliability, ACTIVE } = require('../matching/service');
@@ -19,9 +20,29 @@ async function setStatus(booking, to, userId, note) {
   if (!NEXT[from]?.includes(to)) throw new HttpError(409, `Illegal move ${from} → ${to}`); // BR-01
   if (to === 'ServiceStarted' && !booking.quoteApproved) throw new HttpError(409, 'Quotation not approved yet'); // BR-02
   booking.status = to;
-  await booking.save();
-  await StatusEvent.create({ booking: booking._id, from, to, by: userId, note });
+  // NFR-AVL-03: the status and its event are saved together or not at all
+  await mongoose.connection.transaction(async (session) => {
+    await booking.save({ session });
+    await StatusEvent.create([{ booking: booking._id, from, to, by: userId, note }], { session });
+  });
   return booking;
+}
+
+// FR-BOK-04: a booking the technician did not answer in time ends as Cancelled and frees the slot.
+// shortcut: runs whenever bookings or candidates are read, not on a timer; add a scheduled job
+// when notifications (FR-NOT) exist, so the customer is alerted the moment the window closes.
+async function expireLapsed() {
+  const lapsed = await Booking.find({ status: 'Confirmed', acceptBy: { $lt: new Date() } }, '_id');
+  for (const { _id } of lapsed) {
+    await mongoose.connection.transaction(async (session) => {
+      // Conditional update so two readers expiring at once do not both write an event
+      const r = await Booking.updateOne({ _id, status: 'Confirmed' },
+        { status: 'Cancelled', cancelReason: 'No response in time', cancelledBy: 'system' }, { session });
+      if (r.modifiedCount) {
+        await StatusEvent.create([{ booking: _id, from: 'Confirmed', to: 'Cancelled', note: 'No response in time' }], { session });
+      }
+    });
+  }
 }
 
 // FR-BOK-01/05 + BR-07/08
@@ -32,6 +53,7 @@ async function createBooking({ requestId, technicianId, customerId }) {
   if (!tech || tech.status !== 'Verified' || !tech.online) throw new HttpError(409, 'Technician is not available'); // BR-08
   if (!tech.trades.includes(request.category)) throw new HttpError(409, 'Technician does not work in this category');
 
+  await expireLapsed();
   const slotStart = request.slotStart;
   const slotEnd = new Date(slotStart.getTime() + C.SLOT_HOURS * 3600e3);
   // shortcut: check-then-insert can race under concurrent bookings; add a transaction or slot lock before real traffic.
@@ -39,11 +61,14 @@ async function createBooking({ requestId, technicianId, customerId }) {
   if (clash) throw new HttpError(409, 'Technician already has a booking at this time'); // BR-07
   if (await Booking.exists({ request: request._id, status: { $in: ACTIVE } })) throw new HttpError(409, 'This request already has an active booking');
 
-  const b = await Booking.create({
-    request: request._id, customer: customerId, technician: tech._id, slotStart, slotEnd,
-    acceptBy: new Date(Date.now() + C.ACCEPT_WINDOW_MIN * 60e3),
+  let b;
+  await mongoose.connection.transaction(async (session) => { // NFR-AVL-03: booking and first event together
+    [b] = await Booking.create([{
+      request: request._id, customer: customerId, technician: tech._id, slotStart, slotEnd,
+      acceptBy: new Date(Date.now() + C.ACCEPT_WINDOW_MIN * 60e3),
+    }], { session });
+    await StatusEvent.create([{ booking: b._id, from: null, to: 'Confirmed', by: customerId }], { session });
   });
-  await StatusEvent.create({ booking: b._id, from: null, to: 'Confirmed', by: customerId });
   return b;
 }
 
@@ -94,4 +119,4 @@ async function cancel(booking, role, userId, reason) {
   return booking;
 }
 
-module.exports = { NEXT, setStatus, createBooking, respond, advance, cancel };
+module.exports = { NEXT, setStatus, expireLapsed, createBooking, respond, advance, cancel };

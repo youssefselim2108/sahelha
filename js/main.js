@@ -2,11 +2,18 @@
    the matching function in SH.act changes state, then the page re-renders. */
 (function (SH) {
   function run(name, arg) {
+    if (SH.busy) return;                      /* one API call at a time */
     var fn = SH.act[name];
     if (!fn) { if (window.console) console.warn('Unknown action: ' + name); return; }
-    var U = SH.U();
+    var U = SH.U(), p;
     if (U) { U.flash = null; U.err = ''; }   /* messages show for one step only */
-    try { fn(arg); } catch (err) { if (window.console) console.error(err); }
+    SH.S.apiErr = '';
+    try { p = fn(arg); } catch (err) { if (window.console) console.error(err); }
+    if (p && p.then) {                        /* actions that call the API re-render when it answers */
+      SH.busy = true;
+      p.catch(function (err) { if (window.console) console.error(err); })
+        .then(function () { SH.busy = false; SH.render(); });
+    }
     SH.render();
   }
   SH.run = run;

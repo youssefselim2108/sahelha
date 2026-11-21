@@ -5,6 +5,8 @@ const { HttpError, wrap } = require('../../errors');
 const svc = require('./service');
 
 router.use(requireAuth);
+// FR-BOK-04: settle lapsed response windows before anyone reads or changes a booking
+router.use(wrap(async (req, res, next) => { await svc.expireLapsed(); next(); }));
 
 // Loads the booking and checks the caller is its customer or its technician (admins may read all)
 async function load(req, ...roles) {
@@ -28,7 +30,7 @@ router.post('/', requireRole('customer'), wrap(async (req, res) => {
 router.get('/', wrap(async (req, res) => {
   let filter = { customer: req.user.id };
   if (req.user.role === 'technician') filter = { technician: (await Technician.findOne({ user: req.user.id }, '_id'))?._id };
-  if (req.user.role === 'admin') filter = req.query.status ? { status: req.query.status } : {};
+  if (req.user.role === 'admin') filter = req.query.status ? { status: String(req.query.status) } : {}; // no query operators (NFR-SEC-05)
   res.json(await Booking.find(filter).sort({ slotStart: -1 }).limit(100));
 }));
 

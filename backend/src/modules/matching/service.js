@@ -57,6 +57,23 @@ function matchScore(c, w, ctx) {
   return Math.round(100 * (w.reliability * rel + w.rating * rating + w.distance * distance + w.price * price + w.experience * experience));
 }
 
+// What a customer may see about a technician (FR-MAT-04). `t` is a lean doc with `user` populated.
+function publicTech(t) {
+  return {
+    id: t._id,
+    name: t.user?.name,
+    status: t.status,
+    trades: t.trades,
+    years: t.years,
+    diagnosticFee: t.diagnosticFee,
+    completedJobs: t.stats.completedJobs,
+    avgRating: t.stats.ratingCount ? Math.round((t.stats.ratingSum / t.stats.ratingCount) * 10) / 10 : null,
+    ratingCount: t.stats.ratingCount,
+    reliability: t.reliability, // null → shown as "New"
+    reliabilityInputs: reliabilityInputs(t.stats), // on-time, cancellation, repeat figures
+  };
+}
+
 const SORTS = {
   best: (a, b) => b.matchScore - a.matchScore,
   nearest: (a, b) => a.distanceKm - b.distanceKm,
@@ -92,21 +109,12 @@ async function findCandidates(request, sort = 'best') {
 
   return near
     .map((t) => ({
-      id: t._id,
-      name: t.user?.name,
-      trades: t.trades,
-      years: t.years,
-      diagnosticFee: t.diagnosticFee,
+      ...publicTech(t),
       distanceKm: Math.round(t.distanceKm * 10) / 10,
-      completedJobs: t.stats.completedJobs,
-      avgRating: t.stats.ratingCount ? Math.round((t.stats.ratingSum / t.stats.ratingCount) * 10) / 10 : null,
-      ratingCount: t.stats.ratingCount,
-      reliability: t.reliability, // null → shown as "New"
-      reliabilityInputs: reliabilityInputs(t.stats), // FR-MAT-04: on-time, cancellation, repeat figures
       matchScore: matchScore(t, matchWeights, ctx),
     }))
     .sort(SORTS[sort] || SORTS.best)
     .slice(0, C.MAX_CANDIDATES);
 }
 
-module.exports = { reliabilityInputs, reliabilityScore, recomputeReliability, matchScore, distanceKm, findCandidates, getSettings, ACTIVE };
+module.exports = { publicTech, reliabilityInputs, reliabilityScore, recomputeReliability, matchScore, distanceKm, findCandidates, getSettings, ACTIVE };

@@ -1,10 +1,10 @@
 process.env.CLASSIFIER_URL = 'http://127.0.0.1:9/classify'; // nothing listens here: tests the fallback path
 const mongoose = require('mongoose');
 const request = require('supertest');
-const { MongoMemoryServer } = require('mongodb-memory-server');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
 const app = require('../src/app');
 const seed = require('../src/seed');
-const { Technician, StatusEvent, Settings } = require('../src/models');
+const { Technician, StatusEvent, Settings, Booking } = require('../src/models');
 
 let mongo;
 const api = () => request(app);
@@ -13,7 +13,7 @@ const login = async (login) => (await api().post('/api/auth/login').send({ login
 const tomorrow = () => new Date(Date.now() + 24 * 3600e3).toISOString();
 
 beforeAll(async () => {
-  mongo = await MongoMemoryServer.create();
+  mongo = await MongoMemoryReplSet.create({ replSet: { count: 1 } }); // transactions need a replica set
   await mongoose.connect(mongo.getUri());
   await seed();
 });
@@ -49,6 +49,15 @@ describe('auth (FR-AUTH)', () => {
     }).expect(201);
     const m = await api().get(`/api/requests/${req.body._id}/matches`).set(auth(cust)).expect(200);
     expect(m.body.candidates.map((c) => c.name)).not.toContain('New Tech');
+  });
+
+  test('/me gives a technician their own profile and score, and serves the UI page', async () => {
+    const tech = await login('01112345678');
+    const me = await api().get('/api/auth/me').set(auth(tech)).expect(200);
+    expect(me.body.technician).toMatchObject({ name: 'Ahmed Salah', status: 'Verified' });
+    expect(me.body.technician.reliability).toBeGreaterThan(0);
+    await api().get('/').expect(200).expect(/Sahelha/);
+    await api().get('/backend/src/config.js').expect(404); // source is not exposed
   });
 
   test('role guard: technician cannot use admin routes', async () => {
@@ -157,6 +166,64 @@ describe('full job flow (scenario S1)', () => {
     await api().post(`/api/bookings/${id2}/cancel`).set(auth(tech)).send({}).expect(400); // reason required
     await api().post(`/api/bookings/${id2}/cancel`).set(auth(tech)).send({ reason: 'Van broke down' }).expect(200);
     expect((await Technician.findById(sameh.id).lean()).stats.techCancellations).toBe(before + 1);
+  });
+});
+
+describe('SRS rules found in the requirements check', () => {
+  const newRequest = (cust, body) => api().post('/api/requests').set(auth(cust)).send({
+    description: 'Kitchen sink is leaking badly', category: 'plumbing', location: { lat: 29.9602, lng: 31.2569 }, slotStart: tomorrow(), ...body,
+  });
+
+  test('FR-REQ-01/03/05: six categories, 10+ characters, slot within 14 days', async () => {
+    const cust = await login('01001234567');
+    await newRequest(cust, { category: 'cleaning' }).expect(400);
+    await newRequest(cust, { description: 'Leak!!' }).expect(400);
+    await newRequest(cust, { slotStart: new Date(Date.now() + 15 * 86400e3).toISOString() }).expect(400);
+    await newRequest(cust, {}).expect(201);
+  });
+
+  test('NFR-SEC-05: login rejects query operators', async () => {
+    await api().post('/api/auth/login').send({ login: { $ne: null }, password: 'sahelha123' }).expect(400);
+  });
+
+  test('FR-BOK-04: an unanswered booking lapses, is cancelled and frees the technician', async () => {
+    const cust = await login('01001234567');
+    const rq = await newRequest(cust, {}).expect(201);
+    const [hany] = (await api().get(`/api/requests/${rq.body._id}/matches`).set(auth(cust))).body.candidates;
+    const bk = await api().post('/api/bookings').set(auth(cust)).send({ requestId: rq.body._id, technicianId: hany.id }).expect(201);
+    const rq2 = await newRequest(cust, { slotStart: rq.body.slotStart }).expect(201);
+    const busy = (await api().get(`/api/requests/${rq2.body._id}/matches`).set(auth(cust))).body.candidates;
+    expect(busy.map((c) => c.name)).not.toContain('Hany Fawzy');
+
+    await Booking.updateOne({ _id: bk.body._id }, { acceptBy: new Date(Date.now() - 1000) }); // window passes
+    const free = (await api().get(`/api/requests/${rq2.body._id}/matches`).set(auth(cust))).body.candidates;
+    expect(free.map((c) => c.name)).toContain('Hany Fawzy');
+    const b = (await api().get(`/api/bookings/${bk.body._id}`).set(auth(cust))).body;
+    expect(b).toMatchObject({ status: 'Cancelled', cancelReason: 'No response in time', cancelledBy: 'system' });
+    expect(b.events.map((e) => e.to)).toEqual(['Confirmed', 'Cancelled']);
+  });
+
+  test('NFR-AVL-03: if the status event cannot be saved, no booking is left behind', async () => {
+    const cust = await login('01001234567');
+    const rq = await newRequest(cust, {}).expect(201);
+    const [tech] = (await api().get(`/api/requests/${rq.body._id}/matches`).set(auth(cust))).body.candidates;
+    const before = await Booking.countDocuments();
+    const spy = jest.spyOn(StatusEvent, 'create').mockRejectedValueOnce(new Error('disk full'));
+    await api().post('/api/bookings').set(auth(cust)).send({ requestId: rq.body._id, technicianId: tech.id }).expect(500);
+    spy.mockRestore();
+    expect(await Booking.countDocuments()).toBe(before);
+  });
+
+  test('FR-VER-03/04: non-approval needs a reason; every decision is recorded', async () => {
+    const admin = await login('01000000000');
+    const sameh = await Technician.findOne({ trades: 'electrical' });
+    const url = `/api/admin/technicians/${sameh._id}/verify`;
+    await api().post(url).set(auth(admin)).send({ decision: 'NeedsInfo' }).expect(400);
+    await api().post(url).set(auth(admin)).send({ decision: 'NeedsInfo', reason: 'ID photo is blurry' }).expect(200);
+    await api().post(url).set(auth(admin)).send({ decision: 'Verified' }).expect(200);
+    const log = (await api().get(`/api/admin/technicians/${sameh._id}/decisions`).set(auth(admin)).expect(200)).body;
+    expect(log.map((d) => d.decision)).toEqual(['Verified', 'NeedsInfo']);
+    expect(log[1]).toMatchObject({ reason: 'ID photo is blurry', admin: { name: 'Sahelha Admin' } });
   });
 });
 

@@ -5,6 +5,7 @@ const { User, Technician } = require('../models');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../config');
 const { HttpError, wrap } = require('../errors');
 const { requireAuth } = require('./middleware');
+const { publicTech } = require('../modules/matching/service');
 
 const sign = (u) => jwt.sign({ sub: String(u._id), role: u.role }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
 const publicUser = (u) => ({ id: u._id, name: u.name, phone: u.phone, email: u.email, role: u.role });
@@ -42,8 +43,11 @@ router.post('/register/technician', wrap(async (req, res) => {
 
 // FR-AUTH-04: phone or email + password
 router.post('/login', wrap(async (req, res) => {
+  // NFR-SEC-05: force plain strings so a body like {"login": {"$ne": null}} cannot become a query operator
+  if (typeof req.body.login !== 'string' || typeof req.body.password !== 'string') {
+    throw new HttpError(400, 'login and password are required');
+  }
   const { login, password } = req.body;
-  if (!login || !password) throw new HttpError(400, 'login and password are required');
   const u = await User.findOne({ $or: [{ phone: login }, { email: String(login).toLowerCase() }] }).select('+passwordHash');
   if (!u || !(await bcrypt.compare(password, u.passwordHash))) throw new HttpError(401, 'Wrong phone/email or password');
   res.json({ token: sign(u), user: publicUser(u) });
@@ -52,7 +56,9 @@ router.post('/login', wrap(async (req, res) => {
 router.get('/me', requireAuth, wrap(async (req, res) => {
   const u = await User.findById(req.user.id);
   if (!u) throw new HttpError(404, 'Account not found');
-  res.json(publicUser(u));
+  if (u.role !== 'technician') return res.json(publicUser(u));
+  const t = await Technician.findOne({ user: u._id }).populate('user', 'name').lean();
+  res.json({ ...publicUser(u), technician: t && publicTech(t) });
 }));
 
 module.exports = { router, createUser };

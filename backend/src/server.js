@@ -6,9 +6,10 @@ const seed = require('./seed');
 (async () => {
   let uri = C.MONGO_URI;
   if (!uri) {
-    // No MongoDB configured: start a throwaway in-memory one with demo data
-    const { MongoMemoryServer } = require('mongodb-memory-server');
-    uri = (await MongoMemoryServer.create()).getUri();
+    // No MongoDB configured: start a throwaway in-memory one with demo data.
+    // A one-node replica set, because bookings are saved in transactions (NFR-AVL-03).
+    const { MongoMemoryReplSet } = require('mongodb-memory-server');
+    uri = (await MongoMemoryReplSet.create({ replSet: { count: 1 } })).getUri();
     console.log('MONGO_URI not set: using an in-memory MongoDB (data is lost on exit)');
   }
   await mongoose.connect(uri);

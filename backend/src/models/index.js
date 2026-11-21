@@ -1,8 +1,9 @@
 const mongoose = require('mongoose');
 const { Schema, model } = mongoose;
-const { CATEGORIES } = require('../config');
+const { CATEGORIES, DESCRIPTION_MIN } = require('../config');
 
 const STATUSES = ['Confirmed', 'Assigned', 'OnTheWay', 'Arrived', 'ServiceStarted', 'Completed', 'Cancelled'];
+const VERIFICATION_STATUSES = ['Pending', 'Verified', 'Rejected', 'NeedsInfo', 'Suspended'];
 const ref = (name) => ({ type: Schema.Types.ObjectId, ref: name, required: true });
 const point = { lat: { type: Number, min: -90, max: 90, required: true }, lng: { type: Number, min: -180, max: 180, required: true } };
 
@@ -21,7 +22,7 @@ const Technician = model('Technician', new Schema({
   base: point,
   radiusKm: { type: Number, min: 1, max: 30, default: 10 },
   diagnosticFee: { type: Number, min: 0, default: 150 },
-  status: { type: String, enum: ['Pending', 'Verified', 'Rejected', 'Suspended'], default: 'Pending' }, // FR-AUTH-02
+  status: { type: String, enum: VERIFICATION_STATUSES, default: 'Pending' }, // FR-AUTH-02, FR-VER-03
   online: { type: Boolean, default: true },
   stats: {
     acceptedJobs: { type: Number, default: 0 },
@@ -38,7 +39,7 @@ const Technician = model('Technician', new Schema({
 
 const Request = model('Request', new Schema({
   customer: ref('User'),
-  description: { type: String, required: true, trim: true, minlength: 5, maxlength: 1000 },
+  description: { type: String, required: true, trim: true, minlength: DESCRIPTION_MIN, maxlength: 1000 }, // FR-REQ-03
   photos: { type: [String], validate: (v) => v.length <= 5 }, // FR-REQ: ≤ 5 photos
   suggestedCategory: { type: String, enum: [...CATEGORIES, null], default: null }, // FR-AI-04: stored apart
   category: { type: String, enum: CATEGORIES, required: true }, // confirmed by the customer (BR-10)
@@ -91,4 +92,13 @@ const Settings = model('Settings', new Schema({
   history: [{ field: String, from: Object, to: Object, by: Schema.Types.ObjectId, at: { type: Date, default: Date.now } }],
 }));
 
-module.exports = { User, Technician, Request, Booking, StatusEvent, Quotation, Settings, STATUSES };
+// FR-VER-04: every verification decision, with the admin, the time and the reason (ER: VERIFICATION_RECORD)
+const VerificationRecord = model('VerificationRecord', new Schema({
+  technician: ref('Technician'),
+  admin: ref('User'),
+  decision: { type: String, enum: VERIFICATION_STATUSES.filter((s) => s !== 'Pending'), required: true },
+  reason: { type: String, trim: true },
+  decidedAt: { type: Date, default: Date.now },
+}));
+
+module.exports = { User, Technician, Request, Booking, StatusEvent, Quotation, Settings, VerificationRecord, STATUSES };

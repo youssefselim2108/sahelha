@@ -74,7 +74,7 @@
 
     var intro = '<section class="intro"><span class="tagchip">Sahelha · Frontend prototype</span>' +
       '<h1>' + esc(c.h1) + '</h1><p class="lead">' + esc(c.lead) + '</p><p class="more">' + esc(c.more) + '</p>' +
-      '<p class="fine">This page is a frontend prototype. The data is made up, nothing leaves your browser, and sign-in uses a simulated one-time code.</p></section>';
+      '<p class="fine">Connected to the Sahelha backend: sign-in, AI suggestion, matching, booking, job status and quotations are real API calls. Payment, chat, reviews and history are still simulated.</p></section>';
 
     var check = '<section class="check" aria-labelledby="ckh"><div class="check-h"><h2 id="ckh">Demo checklist</h2><span class="count" aria-live="polite">' + n + ' of ' + list.length + '</span></div>' +
       '<p class="sub">Ticks itself as you use the phone. There is nothing to fill in.</p><ol>' +
@@ -87,6 +87,7 @@
       ? 'Signed in as <b>' + esc(acct.name) + '</b> · ' + ROLE[v]
       : (U.screen === 'pending' ? 'Waiting for approval · <b>' + ROLE[v] + '</b>' : 'Not signed in · <b>' + ROLE[v] + ' view</b>');
     var phone = '<section class="phonecol" aria-label="Phone preview"><div class="who"><span>' + who + '</span></div>' +
+      (S.apiErr ? '<p class="err" role="alert">' + esc(S.apiErr) + '</p>' : '') +
       '<div class="phone"><div class="phone-in"><div class="sb"><span class="sb-time">' + clock(new Date()) + '</span><span class="sb-role">' + ROLE[v] + ' app</span></div>' +
       '<div class="app">' + screenHtml() + '</div></div></div></section>';
 

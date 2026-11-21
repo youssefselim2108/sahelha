@@ -30,8 +30,8 @@
       pendingId: null,      /* technician account waiting for admin approval */
       f: {
         phone: role === 'customer' ? '01001234567' : '01112345678',
-        code: SH.OTP,
-        name: '', sPhone: '', otp: SH.OTP,
+        code: 'sahelha123',   /* demo password from backend/src/seed.js */
+        name: '', sPhone: '', pw: '', otp: SH.OTP,
         area: 'Maadi', trade: 'ac', years: 3, areas: ['Maadi'], idFront: false, idBack: false
       },
       req: null,            /* customer: the request being built */

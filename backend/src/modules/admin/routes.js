@@ -1,5 +1,6 @@
 const router = require('express').Router();
-const { Technician, Settings } = require('../../models');
+const mongoose = require('mongoose');
+const { Technician, Settings, VerificationRecord } = require('../../models');
 const { requireAuth, requireRole } = require('../../auth/middleware');
 const { HttpError, wrap } = require('../../errors');
 const { getSettings, recomputeReliability } = require('../matching/service');
@@ -8,16 +9,29 @@ router.use(requireAuth, requireRole('admin'));
 
 // FR-VER: verification queue
 router.get('/technicians', wrap(async (req, res) => {
-  const filter = req.query.status ? { status: req.query.status } : {};
+  const filter = req.query.status ? { status: String(req.query.status) } : {}; // String(): no query operators (NFR-SEC-05)
   res.json(await Technician.find(filter).populate('user', 'name phone email').sort({ createdAt: 1 }));
 }));
 
+// FR-VER-03/04: approve, reject, ask for more information or suspend. Anything but approval needs a written reason,
+// and the decision is stored together with the status change.
 router.post('/technicians/:id/verify', wrap(async (req, res) => {
-  const { decision } = req.body;
-  if (!['Verified', 'Rejected', 'Suspended'].includes(decision)) throw new HttpError(400, 'decision must be Verified, Rejected or Suspended');
-  const t = await Technician.findByIdAndUpdate(req.params.id, { status: decision }, { new: true });
-  if (!t) throw new HttpError(404, 'Technician not found');
+  const decision = String(req.body.decision || '');
+  const reason = String(req.body.reason || '').trim();
+  const allowed = ['Verified', 'Rejected', 'NeedsInfo', 'Suspended'];
+  if (!allowed.includes(decision)) throw new HttpError(400, `decision must be one of ${allowed.join(', ')}`);
+  if (decision !== 'Verified' && !reason) throw new HttpError(400, 'A written reason is required for this decision');
+  let t;
+  await mongoose.connection.transaction(async (session) => {
+    t = await Technician.findByIdAndUpdate(req.params.id, { status: decision }, { new: true, session });
+    if (!t) throw new HttpError(404, 'Technician not found');
+    await VerificationRecord.create([{ technician: t._id, admin: req.user.id, decision, reason: reason || undefined }], { session });
+  });
   res.json(t);
+}));
+
+router.get('/technicians/:id/decisions', wrap(async (req, res) => {
+  res.json(await VerificationRecord.find({ technician: req.params.id }).sort({ decidedAt: -1 }).populate('admin', 'name'));
 }));
 
 router.get('/settings/weights', wrap(async (req, res) => res.json(await getSettings())));

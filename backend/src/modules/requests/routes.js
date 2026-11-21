@@ -3,6 +3,7 @@ const { Request } = require('../../models');
 const { requireAuth, requireRole } = require('../../auth/middleware');
 const { HttpError, wrap } = require('../../errors');
 const { findCandidates } = require('../matching/service');
+const { expireLapsed } = require('../bookings/service');
 const C = require('../../config');
 
 const NOTE = 'Suggestion only, not a diagnosis. Please confirm or change the category.';
@@ -28,7 +29,7 @@ router.use(requireAuth);
 
 router.post('/suggest', requireRole('customer'), wrap(async (req, res) => {
   const text = String(req.body.description || '').trim();
-  if (text.length < 5) throw new HttpError(400, 'Describe the problem in at least 5 characters');
+  if (text.length < C.DESCRIPTION_MIN) throw new HttpError(400, `Describe the problem in at least ${C.DESCRIPTION_MIN} characters`);
   const s = await suggestCategory(text);
   res.json(s ? { ...s, note: NOTE } : { category: null, note: 'No suggestion available. Please pick a category.' });
 }));
@@ -38,6 +39,7 @@ router.post('/', requireRole('customer'), wrap(async (req, res) => {
   const { description, category, suggestedCategory, location, slotStart, photos = [] } = req.body;
   const start = new Date(slotStart);
   if (isNaN(start) || start <= new Date()) throw new HttpError(400, 'slotStart must be a future date-time');
+  if (start > Date.now() + C.MAX_DAYS_AHEAD * 86400e3) throw new HttpError(400, `Pick a time within the next ${C.MAX_DAYS_AHEAD} days`); // FR-REQ-05
   const r = await Request.create({ customer: req.user.id, description, category, suggestedCategory, location, slotStart: start, photos });
   res.status(201).json(r);
 }));
@@ -53,7 +55,8 @@ router.get('/:id', wrap(async (req, res) => res.json(await ownRequest(req))));
 // FR-MAT-01..07: ranked candidates, optional ?sort=nearest|cheapest|rating
 router.get('/:id/matches', requireRole('customer'), wrap(async (req, res) => {
   const r = await ownRequest(req);
-  const candidates = await findCandidates(r, req.query.sort);
+  await expireLapsed(); // free technicians whose response window has passed (FR-BOK-04)
+  const candidates = await findCandidates(r, String(req.query.sort || 'best'));
   res.json({ candidates, message: candidates.length ? undefined : 'No technician is free for this slot. Try another time.' });
 }));
 

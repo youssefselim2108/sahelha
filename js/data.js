@@ -18,11 +18,12 @@
   /* Three appointment slots, always in the future */
   D.slotsFor = function (now) {
     var early = now.getHours() < 15;
-    var plan = early ? [[0, '6:00 PM'], [1, '10:00 AM'], [1, '2:00 PM']] : [[1, '10:00 AM'], [1, '2:00 PM'], [2, '10:00 AM']];
+    var plan = early ? [[0, '6:00 PM', 18], [1, '10:00 AM', 10], [1, '2:00 PM', 14]] : [[1, '10:00 AM', 10], [1, '2:00 PM', 14], [2, '10:00 AM', 10]];
     return plan.map(function (p) {
       var date = SH.addDays(now, p[0]);
       var word = p[0] === 0 ? 'Today' : p[0] === 1 ? 'Tomorrow' : DAYS[date.getDay()];
-      return { label: word + ', ' + p[1], sub: SH.fmtDay(date), date: SH.fmtDate(date), until: SH.fmtDate(SH.addDays(date, 30)) };
+      var at = new Date(date); at.setHours(p[2], 0, 0, 0);
+      return { label: word + ', ' + p[1], sub: SH.fmtDay(date), date: SH.fmtDate(date), until: SH.fmtDate(SH.addDays(date, 30)), at: at };
     });
   };
 
@@ -34,12 +35,8 @@
     { id: 'electrical', label: 'Electrical', short: 'Electrical', icon: 'bolt' },
     { id: 'appliances', label: 'Appliances', short: 'Appliances', icon: 'washer' },
     { id: 'carpentry', label: 'Carpentry', short: 'Carpentry', icon: 'hammer' },
-    { id: 'painting', label: 'Painting', short: 'Painting', icon: 'roller' },
-    { id: 'cleaning', label: 'Cleaning', short: 'Cleaning', icon: 'sparkle' },
-    { id: 'pest', label: 'Pest control', short: 'Pest control', icon: 'bug' },
-    { id: 'moving', label: 'Moving', short: 'Moving', icon: 'truck' },
-    { id: 'general', label: 'General maintenance', short: 'General', icon: 'wrench' }
-  ];
+    { id: 'painting', label: 'Painting', short: 'Painting', icon: 'roller' }
+  ]; // the six categories of SRS FR-REQ-01
   D.tradeLabel = function (id) {
     for (var i = 0; i < D.TRADES.length; i++) if (D.TRADES[i].id === id) return D.TRADES[i].label;
     return id;
