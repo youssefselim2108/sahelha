@@ -16,13 +16,13 @@
         '<p class="tagline">' + (c ? 'Home services, made simple' : 'Sahelha for service providers') + '</p>' +
         '<span class="rolechip">' + (c ? 'Customer sign-in' : 'Technician sign-in') + '</span></div>' +
         SH.input('fPhone', 'Mobile number', 'f.phone', U.f.phone, { type: 'tel', mode: 'tel', max: 16, enter: 'signIn' }) +
-        SH.input('fCode', 'Password', 'f.code', U.f.code, { type: 'password', max: 64, enter: 'signIn' }) +
+        SH.input('fCode', 'Verification code', 'f.code', U.f.code, { mode: 'numeric', max: 4, enter: 'signIn' }) +
         (U.err ? '<p class="err" role="alert">' + esc(U.err) + '</p>' : '') +
         SH.btn('Sign in', 'signIn') +
         SH.btn('Create account', 'aGo', { kind: 'ghost', arg: 'signup' }) +
         '<button class="linkbtn" data-act="setView"' + SH.arg(c ? 'provider' : 'customer') + '>' + (c ? "I'm a service provider" : "I'm a customer") + '</button>' +
-        '<p class="hint">Signs in to the Sahelha API. The ' + (c ? 'demo customer' : 'demo technician') +
-        ' number and password (' + SH.api.PASSWORD + ') are already filled in.</p>' +
+        '<p class="hint">Sign-in is simulated for the prototype. The ' + (c ? 'demo customer' : 'demo technician') +
+        ' number and the code are already filled in.</p>' +
       '</div>');
   }
 
@@ -46,8 +46,7 @@
     var h = '<div class="body">' +
       '<p class="lede">' + (c ? 'Book trusted technicians and keep a record of every visit.' : 'Tell us about your work. We verify every technician before they can take jobs.') + '</p>' +
       SH.input('fName', 'Full name', 'f.name', f.name, { max: 40, ph: c ? 'Nour Hassan' : 'Ahmed Salah' }) +
-      SH.input('fSPhone', 'Mobile number', 'f.sPhone', f.sPhone, { type: 'tel', mode: 'tel', max: 16, ph: '010 0123 4567' }) +
-      SH.input('fPw', 'Password', 'f.pw', f.pw, { type: 'password', max: 64, ph: 'At least 8 characters' });
+      SH.input('fSPhone', 'Mobile number', 'f.sPhone', f.sPhone, { type: 'tel', mode: 'tel', max: 16, ph: '010 0123 4567' });
     if (c) {
       h += '<div class="field"><span class="lbl">Your area</span>' + areaChips(false) + '</div>';
     } else {
@@ -106,32 +105,17 @@
 
   A.aGo = function (screen) { SH.go(screen); };
 
-  // After the API accepts a sign-in or sign-up: record the account and open the right screen
-  function enter(U, r, me, area) {
-    var c = r === 'customer', acc = SH.api.account(me, r, area);
-    SH.mark(c ? 'c_auth' : 'p_auth');
-    if (!c && acc.status === 'pending') { U.pendingId = acc.id; SH.go('pending', r); return acc; }
-    U.uid = acc.id; U.tab = 'home'; SH.go('home', r);
-    if (!c) SH.mark('p_verified');
-    return acc;
-  }
-  function signInWith(r, phone, password) {
-    return SH.api.login(phone, password).then(function (d) {
-      if (d.user.role !== (r === 'customer' ? 'customer' : 'technician')) {
-        throw new Error('This number belongs to a ' + d.user.role + ' account. Switch view at the top of the page.');
-      }
-      SH.api.tok[r] = d.token;
-      return SH.api.call('GET', '/auth/me', null, d.token);
-    });
-  }
-
   A.signIn = function () {
-    var U = SH.U(), r = role();
+    var U = SH.U(), r = role(), c = r === 'customer';
     var phone = SH.normPhone(U.f.phone);
     if (!phone) { U.err = 'Enter a valid Egyptian mobile number, like 0100 123 4567.'; return; }
-    if (!U.f.code) { U.err = 'Enter your password.'; return; }
-    return signInWith(r, phone, U.f.code)
-      .then(function (me) { enter(U, r, me); }, function (e) { U.err = e.message; });
+    var acc = SH.find(SH.S.accounts, function (a) { return a.role === r && a.phone === phone; });
+    if (!acc) { U.err = 'No ' + (c ? 'customer' : 'technician') + ' account uses this number. Create one, or use the demo number.'; return; }
+    if (String(U.f.code).trim() !== SH.OTP) { U.err = 'That code is not right. The demo code is ' + SH.OTP + '.'; return; }
+    SH.mark(c ? 'c_auth' : 'p_auth');
+    if (!c && acc.status === 'pending') { U.pendingId = acc.id; SH.go('pending'); return; }
+    U.uid = acc.id; U.tab = 'home'; SH.go('home');
+    if (!c) SH.mark('p_verified');
   };
 
   A.startSignup = function () {
@@ -139,7 +123,7 @@
     var name = f.name.trim(), phone = SH.normPhone(f.sPhone);
     if (name.length < 2) { U.err = 'Enter your full name.'; return; }
     if (!phone) { U.err = 'Enter a valid Egyptian mobile number, like 0100 123 4567.'; return; }
-    if (String(f.pw || '').length < 8) { U.err = 'Choose a password of at least 8 characters.'; return; }
+    if (SH.S.accounts.some(function (a) { return a.role === r && a.phone === phone; })) { U.err = 'This number already has an account. Go back and sign in instead.'; return; }
     if (r === 'provider') {
       if (!f.areas.length) { U.err = 'Choose at least one area you cover.'; return; }
       if (!f.idFront || !f.idBack) { U.err = 'Add both sides of your national ID to continue.'; return; }
@@ -148,34 +132,42 @@
     SH.go('otp');
   };
 
-  // The one-time code is still simulated (no SMS provider yet, FR-AUTH-09); the account itself is created by the API
   A.verifyOtp = function () {
-    var U = SH.U(), r = role(), f = U.f, c = r === 'customer';
+    var U = SH.U(), r = role(), f = U.f, S = SH.S;
     if (String(f.otp).trim() !== SH.OTP) { U.err = 'That code is not right. The demo code is ' + SH.OTP + '.'; return; }
-    var body = { name: f.name.trim(), phone: SH.normPhone(f.sPhone), password: f.pw };
-    if (!c) Object.assign(body, { trades: [f.trade], years: f.years, base: SH.api.AREAS[f.areas[0]], radiusKm: 15 });
-    return SH.api.call('POST', '/auth/register/' + (c ? 'customer' : 'technician'), body)
-      .then(function (d) { SH.api.tok[r] = d.token; return SH.api.call('GET', '/auth/me', null, d.token); })
-      .then(function (me) {
-        var acc = enter(U, r, me, c ? f.area : f.areas);
-        if (c) SH.flash('ok', 'Welcome to Sahelha, ' + SH.first(acc.name) + '.', r);
-        f.name = ''; f.sPhone = ''; f.pw = '';
-      }, function (e) { U.err = e.message; });
+    var phone = SH.normPhone(f.sPhone);
+    S.n.acc += 1;
+    var acc = { id: (r === 'customer' ? 'c' : 'p') + (S.n.acc + 1), role: r, name: f.name.trim(), phone: phone };
+    if (r === 'customer') {
+      acc.area = f.area;
+      S.accounts.push(acc);
+      U.uid = acc.id; U.tab = 'home';
+      SH.mark('c_auth');
+      SH.go('home');
+      SH.flash('ok', 'Welcome to Sahelha, ' + SH.first(acc.name) + '.');
+    } else {
+      acc.trade = f.trade; acc.years = f.years; acc.areas = f.areas.slice(); acc.status = 'pending';
+      S.accounts.push(acc);
+      U.pendingId = acc.id;
+      SH.mark('p_auth');
+      SH.go('pending');
+    }
+    f.name = ''; f.sPhone = '';
   };
 
-  // Plays the admin dashboard (not built yet) with the seeded demo admin account
   A.approveTech = function () {
-    var U = SH.U('provider');
-    var acc = SH.find(SH.S.accounts, function (a) { return a.id === U.pendingId; });
+    var U = SH.U('provider'), S = SH.S;
+    var acc = SH.find(S.accounts, function (a) { return a.id === U.pendingId; });
     if (!acc) return;
-    return SH.api.login(SH.api.ADMIN_PHONE, SH.api.PASSWORD)
-      .then(function (d) { return SH.api.call('POST', '/admin/technicians/' + acc.techId + '/verify', { decision: 'Verified' }, d.token); })
-      .then(function () { return SH.api.call('GET', '/auth/me', null, SH.api.tok.provider); })
-      .then(function (me) {
-        U.pendingId = null;
-        enter(U, 'provider', me);
-        SH.flash('ok', 'You are verified. Customers can now find and book you.', 'provider');
-      }, SH.api.fail);
+    acc.status = 'verified';
+    S.n.tech += 1;
+    var t = D.newTech(acc, S.n.tech);
+    S.techs.push(t);
+    acc.techId = t.id;
+    U.uid = acc.id; U.pendingId = null; U.tab = 'home';
+    SH.mark('p_verified');
+    SH.go('home', 'provider');
+    SH.flash('ok', 'You are verified. Customers can now find and book you.', 'provider');
   };
 
   A.signOut = function () {

@@ -1,6 +1,6 @@
-"""Tiny HTTP service for the backend: POST /classify {"text": "..."} -> {"category", "confidence"}.
+"""Tiny HTTP service: POST /classify {"text": "..."} -> {"category", "confidence"}.
 
-Standard library only. The backend gives up after 3 s and falls back to manual selection (FR-AI-03).
+Standard library only. The backend will call it in a later milestone, with a 3 s fallback to manual selection (FR-AI-03).
 """
 import json
 import os

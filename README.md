@@ -4,51 +4,39 @@ Smart home services & maintenance platform for Egypt. Graduation Project, ESLSCA
 
 | Folder | What | Status |
 | --- | --- | --- |
-| `/` (root) | Clickable prototype of the customer, technician and admin apps | Customer and technician flows connected to the API; admin screens, payment, chat and reviews still mocked |
-| `backend/` | Node.js + Express REST API on MongoDB | Foundation working (see below) |
-| `classifier/` | Python AI-assisted request classifier (D12) | Trained & evaluated |
+| `/` (root) | Clickable prototype of the customer, technician and admin apps | UI done; the technician list comes from the backend, the rest is simulated |
+| `backend/` | Node.js + Express REST API on MongoDB | Matching + reliability score working |
+| `classifier/` | Python AI request classifier (D12) | Trained & evaluated |
 
-## Clickable prototype (connected to the backend)
-
-Start the backend (below), then open http://localhost:4000. The backend serves the page and the API together.
-Sign-in, AI suggestion, matching, booking, job status and quotations go through the API;
-payment, chat, reviews and history are still simulated in the browser.
-
-| Role | Mobile number | Password |
-| --- | --- | --- |
-| Customer (Nour Hassan) | `01001234567` | `sahelha123` |
-| Technician (Ahmed Salah) | `01112345678` | `sahelha123` |
-
-New accounts use the one-time code `4829` (simulated; no SMS yet).
-
-## Backend
+## Run it
 
 ```bash
 cd backend
 npm install
-npm test        # 21 tests: auth, matching, booking state machine, quotations, admin, SRS rule checks
-npm start       # http://localhost:4000/api
+npm test        # 9 tests: reliability score, match score, matching API
+npm start       # open http://localhost:4000
 ```
 
-Without `MONGO_URI` set, `npm start` runs an in-memory MongoDB (one-node replica set, needed for
-transactions) seeded with demo data (password for all demo accounts: `sahelha123`; admin phone `01000000000`).
-For a real deployment set `MONGO_URI` (a replica set, e.g. MongoDB Atlas) and `JWT_SECRET`;
-without `JWT_SECRET` a random signing key is used and sign-ins end when the server restarts.
+Without `MONGO_URI` set, `npm start` runs an in-memory MongoDB filled with 6 demo technicians.
+In the prototype, sign in (the demo number and code `4829` are filled in), describe a problem and
+tap **Find technicians**: the ranked list and the reliability scores come from the backend.
 
-What works now:
+## Backend: what works now (D07)
 
-| Deliverable | Endpoints | Rules enforced |
-| --- | --- | --- |
-| D04 Authentication | `POST /api/auth/register/customer`, `/register/technician`, `/login`, `GET /me` | JWT (24 h), bcrypt hashes, one role per account, no public admin sign-up |
-| D01 Requests | `POST /api/requests` | Six SRS categories, 10–1000 character description, slot in the next 14 days |
-| D05 Booking | `POST /api/bookings`, `/:id/accept`, `/decline`, `/status`, `/cancel` | BR-01 legal moves only, BR-05 no cancel after start, BR-07 no double booking, BR-08 verified only (to be matched and to accept), cancelling after the service starts points to a complaint, 30-min accept window (unanswered bookings lapse and free the slot), status changes saved atomically with their append-only events |
-| D07 Matching + reliability score | `GET /api/requests/:id/matches?sort=best\|nearest\|cheapest\|rating` | Weighted reliability (30/20/20/15/15) and match score (30/20/20/15/15), "New" below 5 jobs, ≤ 10 results |
-| D09 Quotations | `POST /api/bookings/:id/quotation`, `/decision`, `/extra`, `/extra/:item/decision` | BR-02 no start without approved quote, BR-03 extras count only once approved, BR-04 decided items locked, server-side totals |
-| D12 AI suggestion | `POST /api/requests/suggest`, `POST /api/requests` | Suggestion stored apart from the confirmed category; 3 s timeout falls back to manual |
-| D03 Admin (API) | `GET /api/admin/technicians`, `POST /:id/verify`, `GET /:id/decisions`, `GET/PUT /api/admin/settings/weights` | Approve / reject / ask for more info / suspend, with a required reason except for approval; every decision recorded with admin and time; weights must sum to 1, every change logged |
+`GET /api/matches?category=ac&lat=29.96&lng=31.25&sort=best|nearest|cheapest|rating`
 
-Not built yet: notifications, reviews, service history/invoices, chat, complaints, the admin dashboard
-screens, document uploads, and Google Maps (distance is straight-line haversine for now).
+| Rule | SRS |
+| --- | --- |
+| Only verified, online technicians in the right trade whose service area covers the location | FR-MAT-01, FR-VER-05 |
+| Ranked by a weighted match score: reliability 30%, rating 20%, distance 20%, price 15%, experience 15% | FR-MAT-02/03 |
+| Reliability score from five inputs: on-time 30%, few cancellations 20%, rating 20%, completed jobs 15%, repeat customers 15% | FR-REL-01/02 |
+| Fewer than 5 completed jobs → shown as "New" | FR-REL-06 |
+| Sort by nearest, cheapest or rating; at most 10 results; a message when nobody is found | FR-MAT-05/06/07 |
+
+Database: one `Technician` collection (trades, experience, service area, fee, verified, job statistics).
+
+Not built yet (next milestones): accounts and sign-in, saving requests, bookings and job status,
+quotations, admin, notifications, reviews, history, chat and complaints.
 
 ## Classifier
 
@@ -56,7 +44,7 @@ screens, document uploads, and Google Maps (distance is straight-line haversine 
 cd classifier
 pip install scikit-learn pandas joblib matplotlib
 python train.py   # compares 4 models, writes results/metrics.json + confusion_matrix.png, saves model.joblib
-python serve.py   # http://127.0.0.1:5001/classify  (the backend calls this)
+python serve.py   # http://127.0.0.1:5001/classify
 ```
 
 Data: 120 team-written requests for the six SRS categories (20 per category, half Egyptian Arabic,

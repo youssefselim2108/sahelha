@@ -80,8 +80,7 @@
     if (r.ai === 'shown') {
       var iss = D.ISSUES[D.classify(r.descr)];
       h += '<div class="ai"><div class="ai-h">' + SH.icon('sparkle', 20) + '<b>Initial recommendation</b><span class="tag">AI estimate</span></div>' +
-        '<dl><dt>Suggested service</dt><dd>' + (r.aiCat ? esc(D.tradeLabel(r.aiCat)) + ' <small>(AI classifier)</small>' : 'No suggestion. Please choose the service yourself.') + '</dd>' +
-        '<dt>Likely issue</dt><dd>' + esc(iss.issue) + '</dd><dt>Typical price range</dt><dd>' + esc(iss.range) + '</dd><dt>Confidence</dt><dd>' + esc(iss.conf) + '</dd></dl>' +
+        '<dl><dt>Likely issue</dt><dd>' + esc(iss.issue) + '</dd><dt>Typical price range</dt><dd>' + esc(iss.range) + '</dd><dt>Confidence</dt><dd>' + esc(iss.conf) + '</dd></dl>' +
         '<p class="hint left">An estimate from your description. The technician confirms the real price in a quotation that you approve.</p>' +
         SH.btn('Dismiss and choose myself', 'dismissAI', { kind: 'ghost', sm: true }) + '</div>';
     } else if (r.ai === 'dismissed') {
@@ -368,7 +367,7 @@
       '<ul class="rows"><li><span>Area</span><b>' + esc(a.area) + '</b></li><li><span>Phone</span><b class="okt">' + SH.icon('check', 14) + ' Verified</b></li>' +
       '<li><span>Account type</span><b>Customer</b></li></ul>' +
       SH.btn('Sign out', 'signOut', { kind: 'ghost', icon: 'logout' }) +
-      '<p class="hint">Your account and bookings are stored by the Sahelha API. Payment, chat and history are still simulated.</p></div>';
+      '<p class="hint">Prototype: your data exists only in this browser tab and is cleared by Restart demo.</p></div>';
     return SH.scr('account', SH.hdr('Account') + h + tabs('account'));
   };
 

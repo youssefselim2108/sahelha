@@ -74,7 +74,7 @@
 
     var intro = '<section class="intro"><span class="tagchip">Sahelha · Frontend prototype</span>' +
       '<h1>' + esc(c.h1) + '</h1><p class="lead">' + esc(c.lead) + '</p><p class="more">' + esc(c.more) + '</p>' +
-      '<p class="fine">Connected to the Sahelha backend: sign-in, AI suggestion, matching, booking, job status and quotations are real API calls. Payment, chat, reviews and history are still simulated.</p></section>';
+      '<p class="fine">This page is a frontend prototype. The list of technicians and their reliability scores come from the Sahelha backend; everything else is simulated in your browser.</p></section>';
 
     var check = '<section class="check" aria-labelledby="ckh"><div class="check-h"><h2 id="ckh">Demo checklist</h2><span class="count" aria-live="polite">' + n + ' of ' + list.length + '</span></div>' +
       '<p class="sub">Ticks itself as you use the phone. There is nothing to fill in.</p><ol>' +
