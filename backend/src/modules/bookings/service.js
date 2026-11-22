@@ -82,6 +82,8 @@ async function respond(booking, accept, userId) {
     if (accept) throw new HttpError(409, 'Response window has passed');
     return booking;
   }
+  // FR-VER-05: only a Verified technician may accept jobs (e.g. not one suspended after the booking was made)
+  if (!(await Technician.exists({ _id: booking.technician, status: 'Verified' }))) throw new HttpError(409, 'Your account is not verified');
   await setStatus(booking, 'Assigned', userId);
   await Technician.updateOne({ _id: booking.technician }, { $inc: { 'stats.acceptedJobs': 1 } });
   return booking;
@@ -107,6 +109,10 @@ async function advance(booking, to, userId) {
 
 // FR-BOK-06/07, BR-05/06: only technician cancellations after accepting count against the score
 async function cancel(booking, role, userId, reason) {
+  // FR-TRK-08: no cancelling once work has started; point the user to a complaint instead
+  if (['ServiceStarted', 'Completed'].includes(booking.status)) {
+    throw new HttpError(409, 'The service has already started, so it cannot be cancelled. Please raise a complaint instead.');
+  }
   if (!reason || !String(reason).trim()) throw new HttpError(400, 'A reason is required to cancel');
   const accepted = booking.status !== 'Confirmed';
   booking.cancelReason = String(reason).trim();

@@ -39,6 +39,8 @@ router.post('/', wrap(async (req, res) => {
 // FR-QUO-02/03: customer approves or declines the whole quote
 router.post('/decision', wrap(async (req, res) => {
   const b = await load(req, 'customer');
+  // Decide only while the technician is on site, so a cancelled booking cannot get an approved quote
+  if (b.status !== 'Arrived') throw new HttpError(409, 'This booking is no longer waiting for a quote decision');
   const q = await getQuote(b._id);
   if (q.status !== 'sent') throw new HttpError(409, 'Quotation already decided');
   const approve = req.body.approve === true;

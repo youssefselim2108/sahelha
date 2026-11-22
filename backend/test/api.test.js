@@ -225,6 +225,24 @@ describe('SRS rules found in the requirements check', () => {
     expect(log.map((d) => d.decision)).toEqual(['Verified', 'NeedsInfo']);
     expect(log[1]).toMatchObject({ reason: 'ID photo is blurry', admin: { name: 'Sahelha Admin' } });
   });
+
+  test('FR-VER-05 / FR-TRK-08: suspended technician cannot accept; no cancel after service start', async () => {
+    const [cust, admin, hany] = await Promise.all([login('01001234567'), login('01000000000'), login('01112345682')]);
+    const rq = await newRequest(cust, {}).expect(201);
+    const [tech] = (await api().get(`/api/requests/${rq.body._id}/matches`).set(auth(cust))).body.candidates;
+    const bk = await api().post('/api/bookings').set(auth(cust)).send({ requestId: rq.body._id, technicianId: tech.id }).expect(201);
+    const verify = (decision, reason) => api().post(`/api/admin/technicians/${tech.id}/verify`).set(auth(admin)).send({ decision, reason });
+
+    await verify('Suspended', 'Under review').expect(200);
+    await api().post(`/api/bookings/${bk.body._id}/accept`).set(auth(hany)).expect(409);
+    await verify('Verified').expect(200);
+    await api().post(`/api/bookings/${bk.body._id}/accept`).set(auth(hany)).expect(200);
+
+    await Booking.updateOne({ _id: bk.body._id }, { status: 'ServiceStarted' });
+    const r = await api().post(`/api/bookings/${bk.body._id}/cancel`).set(auth(cust)).send({ reason: 'changed my mind' }).expect(409);
+    expect(r.body.error).toMatch(/complaint/);
+    await Booking.updateOne({ _id: bk.body._id }, { status: 'Cancelled' }); // free the slot for later tests
+  });
 });
 
 describe('admin', () => {

@@ -4,7 +4,7 @@ Smart home services & maintenance platform for Egypt. Graduation Project, ESLSCA
 
 | Folder | What | Status |
 | --- | --- | --- |
-| `/` (root) | Clickable prototype of the customer, technician and admin apps (mock data) | UI mocked |
+| `/` (root) | Clickable prototype of the customer, technician and admin apps | Customer and technician flows connected to the API; admin screens, payment, chat and reviews still mocked |
 | `backend/` | Node.js + Express REST API on MongoDB | Foundation working (see below) |
 | `classifier/` | Python AI-assisted request classifier (D12) | Trained & evaluated |
 
@@ -26,7 +26,7 @@ New accounts use the one-time code `4829` (simulated; no SMS yet).
 ```bash
 cd backend
 npm install
-npm test        # 20 tests: auth, matching, booking state machine, quotations, admin, SRS rule checks
+npm test        # 21 tests: auth, matching, booking state machine, quotations, admin, SRS rule checks
 npm start       # http://localhost:4000/api
 ```
 
@@ -41,7 +41,7 @@ What works now:
 | --- | --- | --- |
 | D04 Authentication | `POST /api/auth/register/customer`, `/register/technician`, `/login`, `GET /me` | JWT (24 h), bcrypt hashes, one role per account, no public admin sign-up |
 | D01 Requests | `POST /api/requests` | Six SRS categories, 10–1000 character description, slot in the next 14 days |
-| D05 Booking | `POST /api/bookings`, `/:id/accept`, `/decline`, `/status`, `/cancel` | BR-01 legal moves only, BR-05 no cancel after start, BR-07 no double booking, BR-08 verified only, 30-min accept window (unanswered bookings lapse and free the slot), status changes saved atomically with their append-only events |
+| D05 Booking | `POST /api/bookings`, `/:id/accept`, `/decline`, `/status`, `/cancel` | BR-01 legal moves only, BR-05 no cancel after start, BR-07 no double booking, BR-08 verified only (to be matched and to accept), cancelling after the service starts points to a complaint, 30-min accept window (unanswered bookings lapse and free the slot), status changes saved atomically with their append-only events |
 | D07 Matching + reliability score | `GET /api/requests/:id/matches?sort=best\|nearest\|cheapest\|rating` | Weighted reliability (30/20/20/15/15) and match score (30/20/20/15/15), "New" below 5 jobs, ≤ 10 results |
 | D09 Quotations | `POST /api/bookings/:id/quotation`, `/decision`, `/extra`, `/extra/:item/decision` | BR-02 no start without approved quote, BR-03 extras count only once approved, BR-04 decided items locked, server-side totals |
 | D12 AI suggestion | `POST /api/requests/suggest`, `POST /api/requests` | Suggestion stored apart from the confirmed category; 3 s timeout falls back to manual |
